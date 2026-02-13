@@ -38,5 +38,5 @@ def run_scan():
     send_to_telegram(alert_text)
 
 # FIX: Added double underscores below
-if _name_ == "_main_":
+if __name__ == "__main__":
     run_scan()
