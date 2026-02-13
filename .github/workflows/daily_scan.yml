@@ -1,8 +1,9 @@
 name: RTL Job Alert Bot
+
 on:
   schedule:
-    - cron: '0 4,14 * * *' # Runs at 9:30 AM and 7:30 PM IST (approx)
-  workflow_dispatch:      # Allows you to run it manually for testing
+    - cron: '0 4,14 * * *' # Runs twice daily
+  workflow_dispatch:      # Allows manual run
 
 jobs:
   build:
@@ -10,12 +11,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install requests selenium beautifulsoup4 webdriver-manager
+
+      - name: Setup Chrome for Selenium
+        uses: browser-actions/setup-chrome@v1
+
       - name: Run Job Search
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
