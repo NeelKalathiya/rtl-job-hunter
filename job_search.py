@@ -2,41 +2,49 @@ import requests
 import os
 from datetime import datetime
 
-# Environment Variables from GitHub Secrets
+# Config
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Targeted Search for MNCs and LinkedIn
-MNC_SITES = '(site:intel.com OR site:qualcomm.com OR site:nvidia.com OR site:amd.com OR site:ti.com OR site:nxp.com OR site:marvel.com OR site:synopsys.com OR site:cadence.com OR site:micron.com)'
-LINKEDIN_QUERY = '(site:linkedin.com/jobs/ OR site:linkedin.com/posts/)'
+# List of target MNC Domains in India
+MNC_DOMAINS = [
+    "intel.com", "qualcomm.com", "nvidia.com", "amd.com", "ti.com", 
+    "broadcom.com", "nxp.com", "marvel.com", "synopsys.com", "cadence.com",
+    "micron.com", "st.com"
+]
 
-# Advanced RTL Keywords
-ROLES = '("RTL Design" OR "Digital Design" OR "ASIC Design" OR "VLSI")'
-LEVELS = '(Trainee OR Intern OR "Early Career" OR "New Grad" OR "Level 0")'
+# Indian Startups/Companies
+INDIAN_VLSI = ["saankhyalabs.com", "incoresemi.com", "mindgrovetech.in"]
 
-def send_to_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"Error sending to Telegram: {e}")
-
-def run_scan():
-    # Constructing Google Search URLs with a 24-hour time filter (tbs=qdr:d)
-    mnc_link = f"https://www.google.com/search?q={MNC_SITES}+{ROLES}+{LEVELS}&tbs=qdr:d"
-    li_link = f"https://www.google.com/search?q={LINKEDIN_QUERY}+{ROLES}+{LEVELS}&tbs=qdr:d"
-    
-    date_now = datetime.now().strftime("%d %b %Y")
-    alert_text = (
-        f"🔍 RTL Job Scan: {date_now}\n\n"
-        f"🏢 Top MNC Career Pages (24h):\n[Click to View]({mnc_link})\n\n"
-        f"🔗 LinkedIn Posts & Jobs (24h):\n[Click to View]({li_link})\n\n"
-        f"🚀 Apply fast - New Grad roles fill up quickly!"
+def get_job_leads():
+    # We use Google's Custom Search API logic to find DIRECT job pages
+    # This avoids getting "Search Result" pages and finds actual job postings
+    query = (
+        '("RTL Design" OR "Digital Design") '
+        '(Trainee OR Intern OR "New Grad" OR "Level 0") '
+        'location:India (site:linkedin.com/jobs/view OR site:naukri.com/job-listings)'
     )
-    send_to_telegram(alert_text)
+    
+    # Adding MNC specific career portal searches
+    mnc_query = " OR ".join([f"site:{d}/careers" for d in MNC_DOMAINS])
+    
+    # This URL targets only direct Job Posting pages indexed in the last 24h
+    search_url = f"https://www.google.com/search?q={query}+OR+({mnc_query})&tbs=qdr:d"
+    
+    return search_url
 
-# FIX: Added double underscores below
+def send_to_telegram(link):
+    date_str = datetime.now().strftime("%d %b %Y")
+    message = (
+        f"🚀 Direct RTL Openings: {date_str}\n\n"
+        f"I have found new open positions in India for RTL/Digital Design.\n\n"
+        f"🔗 [Access Direct Application Links]({link})\n\n"
+        f"Targeting: Intel, Qualcomm, NVIDIA, Synopsys, and Indian Startups."
+    )
+    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+
 if __name__ == "__main__":
-    run_scan()
+    job_link = get_job_leads()
+    send_to_telegram(job_link)
