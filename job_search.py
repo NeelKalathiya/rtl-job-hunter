@@ -1,53 +1,42 @@
 import requests
-from bs4 import BeautifulSoup
 import os
-import time
 from datetime import datetime
 
 # Config
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Your specific hardware keywords
-KEYWORDS = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware") AND (Fresher OR "0 years" OR Trainee)'
+# Technical Domains & Level
+TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware")'
+LEVEL = '("Fresher" OR "0 years" OR "New Grad" OR "Trainee")'
 
-def send_to_telegram(company, title, link):
-    """Sends each job as a separate notification."""
+def send_to_telegram(company_name, link):
     message = (
-        f"🏢 *Company:* {company}\n"
-        f"📌 *Role:* {title}\n"
-        f"🔗 [Direct Apply Link]({link})"
+        f"🏢 *Company: {company_name}*\n"
+        f"🚀 [View Direct {company_name} India Openings]({link})\n"
     )
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
 
-def scrape_linkedin_india():
-    # Using the LinkedIn 'Guest' API which is more stable for scraping
-    search_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={KEYWORDS.replace(' ', '%20')}&location=India&f_TPR=r86400&start=0"
+def run_company_portal_scan():
+    # Targeted search strings for specific MNC portals in India
+    # Using 'tbs=qdr:d' for results in the last 24 hours
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    companies = {
+        "Intel": f"site:intel.com {TECH} {LEVEL} India",
+        "NVIDIA": f"site:nvidia.com {TECH} {LEVEL} India",
+        "Qualcomm": f"site:qualcomm.com {TECH} {LEVEL} India",
+        "AMD": f"site:amd.com {TECH} {LEVEL} India",
+        "Synopsys": f"site:synopsys.com {TECH} {LEVEL} India",
+        "Cadence": f"site:cadence.com {TECH} {LEVEL} India",
+        "Texas Instruments": f"site:ti.com {TECH} {LEVEL} India",
+        "Micron": f"site:micron.com {TECH} {LEVEL} India"
     }
 
-    try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        job_cards = soup.find_all('li') # LinkedIn Guest API returns list items
-
-        for card in job_cards[:10]: # Check top 10 separate jobs
-            try:
-                title = card.find('h3', class_='base-search-card__title').text.strip()
-                company = card.find('h4', class_='base-search-card__subtitle').text.strip()
-                # Get the clean direct link
-                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
-                
-                send_to_telegram(company, title, link)
-                time.sleep(1) # Small delay to avoid Telegram spam limits
-            except:
-                continue
-    except Exception as e:
-        print(f"LinkedIn Error: {e}")
+    for name, query in companies.items():
+        # This creates a direct link to the filtered search for THAT company only
+        direct_link = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:d"
+        send_to_telegram(name, direct_link)
 
 if __name__ == "__main__":
-    print("Starting deep scan for India Hardware/VLSI roles...")
-    scrape_linkedin_india()
+    run_company_portal_scan()
