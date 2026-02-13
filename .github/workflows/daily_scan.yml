@@ -1,12 +1,13 @@
-name: RTL Job Alert Bot
+name: Hourly RTL & MNC Job Hunter
 
 on:
   schedule:
-    - cron: '0 4,14 * * *' # Runs twice daily
-  workflow_dispatch:      # Allows manual run
+    # This triggers the workflow every hour (at minute 0)
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows you to run it manually anytime
 
 jobs:
-  build:
+  job_hunt:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -18,14 +19,16 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: |
-          pip install requests selenium beautifulsoup4 webdriver-manager
+        run: pip install requests beautifulsoup4
 
-      - name: Setup Chrome for Selenium
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Run Job Search
+      - name: Run MNC Portal Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python job_search.py
+        run: python mnc_portal_bot.py
+
+      - name: Run Web Portal Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python web_portal_bot.py
