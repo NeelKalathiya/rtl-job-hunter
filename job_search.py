@@ -8,12 +8,12 @@ from datetime import datetime
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Core Keywords
+# Keywords for India
 TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware")'
-LEVEL = '("Fresher" OR "0 years" OR "Trainee")'
+EXP = '("Fresher" OR "0 years" OR "Trainee" OR "New Grad")'
 
 def send_to_telegram(title, company, link):
-    """Sends a formatted message with a clear button/link."""
+    """Sends a clear message. Added a delay to prevent Telegram '429 Too Many Requests' error."""
     message = (
         f"🎯 *New Opening Found*\n\n"
         f"🏢 *Company:* {company}\n"
@@ -21,44 +21,42 @@ def send_to_telegram(title, company, link):
         f"🔗 [APPLY DIRECTLY HERE]({link})"
     )
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
-
-def scrape_linkedin_india():
-    """Engine 1: Scans LinkedIn for individual India-based jobs."""
-    search_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={TECH.replace(' ', '%20')}%20{LEVEL.replace(' ', '%20')}&location=India&f_TPR=r86400"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
     try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        cards = soup.find_all('li')
-        for card in cards[:5]:  # Limit to top 5 to avoid spam
-            try:
-                title = card.find('h3', class_='base-search-card__title').text.strip()
-                company = card.find('h4', class_='base-search-card__subtitle').text.strip()
-                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
-                send_to_telegram(title, company, link)
-            except: continue
-    except Exception as e: print(f"LinkedIn Error: {e}")
+        requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+        time.sleep(1.5) # REQUIRED: Prevents bot from being banned by Telegram
+    except Exception as e:
+        print(f"Error sending to Telegram: {e}")
 
-def get_mnc_portal_links():
-    """Engine 2: Generates direct 'Daily Scan' links for major MNC portals."""
+def scrape_linkedin():
+    """Scans LinkedIn for all India hardware roles posted today."""
+    url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={TECH.replace(' ', '%20')}%20{EXP.replace(' ', '%20')}&location=India&f_TPR=r86400"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for card in soup.find_all('li'):
+            title = card.find('h3', class_='base-search-card__title').text.strip()
+            company = card.find('h4', class_='base-search-card__subtitle').text.strip()
+            link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
+            send_to_telegram(title, company, link)
+    except: pass
+
+def deep_mnc_scan():
+    """Finds direct apply pages indexed by Google for top MNCs."""
     mncs = {
-        "Intel India": f"site:intel.com {TECH} {LEVEL} India",
-        "Qualcomm India": f"site:qualcomm.com {TECH} {LEVEL} India",
-        "NVIDIA India": f"site:nvidia.com {TECH} {LEVEL} India",
-        "Synopsys": f"site:synopsys.com {TECH} {LEVEL} India",
-        "Naukri Scan": f"{TECH} {LEVEL} site:naukri.com/job-listings"
+        "Intel India": f"site:intel.com/content/www/in {TECH} {EXP}",
+        "NVIDIA India": f"site:nvidia.com/en-in {TECH} {EXP}",
+        "Qualcomm": f"site:qualcomm.com/company/careers {TECH} {EXP} India",
+        "Synopsys": f"site:synopsys.com/careers {TECH} {EXP} India",
+        "Naukri.com": f"site:naukri.com/job-listings {TECH} {EXP}"
     }
-    
     for name, query in mncs.items():
-        # This link opens a GOOGLE search PRE-FILTERED for that company's jobs in the last 24h
-        direct_search_link = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:d"
-        send_to_telegram("Portal Scan", name, direct_search_link)
+        search_link = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:d"
+        # Since scraping Workday/internal portals directly is blocked, 
+        # we give you the Google link that bypasses the 'Login Wall'.
+        send_to_telegram("Direct Portal Scan", name, search_link)
 
 if __name__ == "__main__":
-    print("Starting mixed scan for India...")
-    # Get individual LinkedIn jobs first
-    scrape_linkedin_india()
-    # Get direct company portal search links second
-    get_mnc_portal_links()
+    print("Starting Unlimited Scan...")
+    scrape_linkedin()
+    deep_mnc_scan()
