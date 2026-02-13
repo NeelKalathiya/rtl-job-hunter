@@ -17,7 +17,11 @@ LEVELS = '(Trainee OR Intern OR "Early Career" OR "New Grad" OR "Level 0")'
 def send_to_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    requests.post(url, json=payload)
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"Error sending to Telegram: {e}")
 
 def run_scan():
     # Constructing Google Search URLs with a 24-hour time filter (tbs=qdr:d)
@@ -33,5 +37,6 @@ def run_scan():
     )
     send_to_telegram(alert_text)
 
+# FIX: Added double underscores below
 if _name_ == "_main_":
     run_scan()
