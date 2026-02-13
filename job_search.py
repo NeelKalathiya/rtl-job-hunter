@@ -1,52 +1,37 @@
 import os
 import requests
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from bs4 import BeautifulSoup
 
 # Config
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-def get_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless") # Runs without a window
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(options=chrome_options)
+# 1. Technical Domain Keywords
+DOMAINS = '("RTL Design" OR "Physical Design" OR "ASIC" OR "Hardware Design" OR "Digital Design")'
 
-def find_india_rtl_jobs():
-    driver = get_driver()
-    # Direct LinkedIn search for India-based RTL roles posted in last 24h
-    url = "https://www.linkedin.com/jobs/search/?keywords=RTL%20Design%20Trainee%20OR%20New%20Grad&location=India&f_TPR=r86400"
+# 2. Experience Level Keywords
+LEVELS = '("0 years experience" OR "Fresher" OR "New Grad" OR "Trainee" OR "Entry Level")'
+
+# 3. Location and Platform Filters
+# This query tells Google to find DIRECT job pages in India on multiple portals
+QUERY = f'{DOMAINS} AND {LEVELS} AND location:India (site:naukri.com/job-listings OR site:linkedin.com/jobs/view OR site:indeed.com/viewjob OR site:workday.com)'
+
+def run_broad_search():
+    # We use a 24-hour filter (tbs=qdr:d) to get only today's openings
+    search_url = f"https://www.google.com/search?q={QUERY.replace(' ', '+')}&tbs=qdr:d"
     
-    jobs = []
-    try:
-        driver.get(url)
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        cards = soup.find_all('div', class_='base-card') # Common card for LinkedIn jobs
-
-        for card in cards[:8]: # Check top 8 new openings
-            title = card.find('h3', class_='base-search-card__title').text.strip()
-            company = card.find('h4', class_='base-search-card__subtitle').text.strip()
-            # This extracts the actual direct job link
-            raw_link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
-            
-            jobs.append(f"🏢 {company}\n📌 {title}\n🔗 [Direct Apply Link]({raw_link})")
-    finally:
-        driver.quit()
-    return jobs
-
-def send_telegram(jobs):
-    if not jobs:
-        msg = "🔍 No new direct RTL Trainee openings found in India today."
-    else:
-        msg = f"🚀 New RTL India Direct Openings ({datetime.now().strftime('%d %b')})\n\n" + "\n\n---\n\n".join(jobs)
+    date_str = datetime.now().strftime("%d %b %Y")
+    
+    message = (
+        f"🎯 *New Hardware/VLSI Openings: {date_str}*\n\n"
+        f"Checked for: RTL, Physical Design, ASIC, and Hardware roles.\n"
+        f"Filters: 0 Exp / Freshers / India.\n\n"
+        f"🚀 [View Direct Application Links]({search_url})\n\n"
+        f"_Platforms: LinkedIn, Naukri, Indeed, and MNC Career Portals._"
+    )
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
 
 if __name__ == "__main__":
-    found_jobs = find_india_rtl_jobs()
-    send_telegram(found_jobs)
+    run_broad_search()
