@@ -44,6 +44,18 @@ def get_mnc_jobs():
             time.sleep(1) # Safety delay
     except:
         pass
-
+    def send_to_telegram(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    
+    try:
+        response = requests.post(url, json=payload)
+        # This will show you exactly why it failed in GitHub Actions
+        if response.status_code != 200:
+            print(f"❌ Telegram Error {response.status_code}: {response.text}")
+        else:
+            print(f"✅ Message sent successfully!")
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
 if __name__ == "__main__":
     get_mnc_jobs()
