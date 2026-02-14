@@ -2,47 +2,52 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import time
+from datetime import datetime
 
+# Config
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-def scrape_web_portals():
-    # LinkedIn Guest API for India Hardware roles
-    li_url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=RTL%20Design%20Trainee&location=India&f_TPR=r86400"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
-    try:
-        res = requests.get(li_url, headers=headers)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        cards = soup.find_all('li')
-        
-        count = 0
-        for card in cards:
-            if count >= 10: break # STRICT LIMIT: 10 messages
-            
-            title = card.find('h3', class_='base-search-card__title').text.strip()
-            company = card.find('h4', class_='base-search-card__subtitle').text.strip()
-            link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
-            
-            msg = f"🌐 *Portal:* LinkedIn/Naukri\n🏢 *Company:* {company}\n📌 *Role:* {title}\n🔗 [Apply Link]({link})"
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            count += 1
-            time.sleep(1)
-    except:
-        pass
-    def send_to_telegram(message):
+# Your specific hardware keywords
+KEYWORDS = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware") AND (Fresher OR "0 years" OR Trainee)'
+
+def send_to_telegram(company, title, link):
+    """Sends each job as a separate notification."""
+    message = (
+        f"🏢 *Company:* {company}\n"
+        f"📌 *Role:* {title}\n"
+        f"🔗 [Direct Apply Link]({link})"
+    )
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+
+def scrape_linkedin_india():
+    # Using the LinkedIn 'Guest' API which is more stable for scraping
+    search_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={KEYWORDS.replace(' ', '%20')}&location=India&f_TPR=r86400&start=0"
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     try:
-        response = requests.post(url, json=payload)
-        # This will show you exactly why it failed in GitHub Actions
-        if response.status_code != 200:
-            print(f"❌ Telegram Error {response.status_code}: {response.text}")
-        else:
-            print(f"✅ Message sent successfully!")
+        response = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        job_cards = soup.find_all('li') # LinkedIn Guest API returns list items
+
+        for card in job_cards[:10]: # Check top 10 separate jobs
+            try:
+                title = card.find('h3', class_='base-search-card__title').text.strip()
+                company = card.find('h4', class_='base-search-card__subtitle').text.strip()
+                # Get the clean direct link
+                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
+                
+                send_to_telegram(company, title, link)
+                time.sleep(1) # Small delay to avoid Telegram spam limits
+            except:
+                continue
     except Exception as e:
-        print(f"❌ Connection Error: {e}")
+        print(f"LinkedIn Error: {e}")
+
 if __name__ == "__main__":
-    scrape_web_portals()
+    print("Starting deep scan for India Hardware/VLSI roles...")
+    scrape_linkedin_india()
