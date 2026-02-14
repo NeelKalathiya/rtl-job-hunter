@@ -2,60 +2,64 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import time
+import re # Added for Job ID extraction
 
+# Config
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Targeted MNC subdomains for India
-MNC_SITES = '(site:intel.com/content/www/in OR site:nvidia.com/en-in OR site:qualcomm.com/company/careers OR site:ti.com/careers)'
-KEYWORDS = '("RTL" OR "Physical Design" OR "ASIC") AND (Trainee OR Fresher OR "0 years")'
+# Technical Domains & Level
+TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware")'
+LEVEL = '("Fresher" OR "0 years" OR "New Grad" OR "Trainee")'
 
-def get_mnc_jobs():
-    query = f"{MNC_SITES} {KEYWORDS}"
-    url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:d"
+def send_to_telegram(company_name, job_id, link):
+    # This now includes the Job ID in the message
+    message = (
+        f"🏢 *Company: {company_name}*\n"
+        f"🆔 *Job ID:* {job_id}\n"
+        f"🚀 [View Direct {company_name} India Openings]({link})\n"
+    )
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+
+def run_company_portal_scan():
+    # Targeted search strings for specific MNC portals in India
+    companies = {
+        "Intel": f"site:intel.com {TECH} {LEVEL} India",
+        "NVIDIA": f"site:nvidia.com {TECH} {LEVEL} India",
+        "Qualcomm": f"site:qualcomm.com {TECH} {LEVEL} India",
+        "AMD": f"site:amd.com {TECH} {LEVEL} India",
+        "Synopsys": f"site:synopsys.com {TECH} {LEVEL} India",
+        "Cadence": f"site:cadence.com {TECH} {LEVEL} India",
+        "Texas Instruments": f"site:ti.com {TECH} {LEVEL} India",
+        "Micron": f"site:micron.com {TECH} {LEVEL} India"
+    }
+
     headers = {"User-Agent": "Mozilla/5.0"}
     
-    try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        results = soup.find_all('div', class_='g')
+    for name, query in companies.items():
+        # Google search for the last 24 hours
+        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:d"
         
-        count = 0
-        for res in results:
-            if count >= 10: break # STRICT LIMIT: 10 messages
+        try:
+            response = requests.get(search_url, headers=headers)
+            soup = BeautifulSoup(response.text, 'html.parser')
             
-            link = res.find('a')['href']
-            text = res.text
+            # Look at the first search result to try and find a Job ID
+            first_result = soup.find('div', class_='g')
+            job_id = "Check Link"
             
-            # Logic to extract a likely Job ID (usually 5-8 digits)
-            import re
-            job_id_match = re.search(r'\b\d{5,8}\b', text)
-            job_id = job_id_match.group(0) if job_id_match else "Check Link"
+            if first_result:
+                # Search for a 5-8 digit number in the text
+                match = re.search(r'\b\d{5,8}\b', first_result.text)
+                if match:
+                    job_id = match.group(0)
             
-            # Extract company name from URL
-            company = "MNC"
-            for c in ["Intel", "NVIDIA", "Qualcomm", "Texas Instruments"]:
-                if c.lower() in link.lower(): company = c
+            send_to_telegram(name, job_id, search_url)
+            time.sleep(1.5) # Prevent Telegram spam block
             
-            msg = f"🏢 *MNC:* {company}\n🆔 *Job ID:* {job_id}\n🔗 [Apply Directly]({link})"
-            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
-                          json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
-            count += 1
-            time.sleep(1) # Safety delay
-    except:
-        pass
-    def send_to_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    
-    try:
-        response = requests.post(url, json=payload)
-        # This will show you exactly why it failed in GitHub Actions
-        if response.status_code != 200:
-            print(f"❌ Telegram Error {response.status_code}: {response.text}")
-        else:
-            print(f"✅ Message sent successfully!")
-    except Exception as e:
-        print(f"❌ Connection Error: {e}")
+        except Exception as e:
+            print(f"Error scanning {name}: {e}")
+
 if __name__ == "__main__":
-    get_mnc_jobs()
+    run_company_portal_scan()
