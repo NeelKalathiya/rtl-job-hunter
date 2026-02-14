@@ -8,66 +8,68 @@ import re
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Keywords for India 2026 Hardware Roles
-TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware")'
-EXP = '("Fresher" OR "0 years" OR "Trainee" OR "New Grad")'
+# Keywords
+KEYWORDS = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware") AND (Fresher OR "0 years" OR Trainee)'
 
-def send_to_telegram(category, company, title, link):
-    """Sends each finding as a separate message with 1.5s delay."""
-    icon = "🏢" if category == "MNC Portal" else "🌐"
+def send_to_telegram(type_label, company, title, link):
+    """Sends each finding as a separate notification."""
     message = (
-        f"{icon} *Type:* {category}\n"
-        f"🏢 *Company:* {company}\n"
-        f"📌 *Role:* {title}\n"
-        f"🔗 [APPLY HERE]({link})"
+        f"📣 *Type:* {type_label}\n"
+        f"🏢 *Company/Source:* {company}\n"
+        f"📌 *Details:* {title}\n"
+        f"🔗 [Direct Link]({link})"
     )
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
         requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
-        time.sleep(1.5) # REQUIRED to prevent Telegram spam block
-    except: pass
+        time.sleep(1.5) # Prevents Telegram spam block
+    except Exception as e:
+        print(f"Telegram Error: {e}")
 
-def get_jobs():
-    """Engine: Search Google for LinkedIn, Naukri, and MNC Career Sites."""
-    # We use Google because it's the only way to get results without a LinkedIn login
-    queries = {
-        "LinkedIn Jobs": f"site:linkedin.com/jobs/view {TECH} {EXP} India",
-        "LinkedIn Posts": f"site:linkedin.com/posts/ {TECH} {EXP} India hiring",
-        "MNC Portals": f"(site:intel.com OR site:nvidia.com OR site:qualcomm.com) {TECH} {EXP} India"
-    }
-
+def scrape_linkedin_jobs():
+    """Engine 1: Scans LinkedIn Job Section."""
+    search_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={KEYWORDS.replace(' ', '%20')}&location=India&f_TPR=r604800&start=0"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    for category, query in queries.items():
-        # Searching the past week ('tbs=qdr:w') to ensure we get results
-        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:w"
-        
-        try:
-            res = requests.get(search_url, headers=headers, timeout=15)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # Find all search result blocks
-            results = soup.find_all('div', class_='g')
-            
-            count = 0
-            for r in results:
-                if count >= 4: break # Limit to top 4 per category (Total 12 per hour)
-                
-                link_tag = r.find('a')
-                if not link_tag: continue
-                
-                link = link_tag['href']
-                title = r.find('h3').text if r.find('h3') else "View Opening"
-                
-                # Extracting company name from link
-                company = "MNC"
-                for c in ["Intel", "Nvidia", "Qualcomm", "Linkedin", "Naukri"]:
-                    if c.lower() in link.lower(): company = c
-                
-                send_to_telegram(category, company, title, link)
-                count += 1
-        except Exception as e:
-            print(f"Error in {category}: {e}")
+    try:
+        response = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        job_cards = soup.find_all('li')
+
+        for card in job_cards[:5]:
+            try:
+                title = card.find('h3', class_='base-search-card__title').text.strip()
+                company = card.find('h4', class_='base-search-card__subtitle').text.strip()
+                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
+                send_to_telegram("JOB OPENING", company, title, link)
+            except: continue
+    except Exception as e:
+        print(f"Job Scrape Error: {e}")
+
+def search_linkedin_posts():
+    """Engine 2: Scans LinkedIn POSTS via Google (Bypasses Login)."""
+    # Searching for posts from the last 7 days to get more results
+    query = f'site:linkedin.com/posts/ {KEYWORDS} "India" "hiring"'
+    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:w"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+    try:
+        response = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        results = soup.find_all('div', class_='g')
+
+        for res in results[:5]: # Limit to top 5 posts
+            try:
+                link = res.find('a')['href']
+                title = res.find('h3').text if res.find('h3') else "LinkedIn Post"
+                if "/posts/" in link:
+                    send_to_telegram("HIRING POST", "LinkedIn Post", title, link)
+            except: continue
+    except Exception as e:
+        print(f"Post Search Error: {e}")
 
 if __name__ == "__main__":
-    get_jobs()
+    print("Starting combined Job and Post scan...")
+    # Run both engines
+    scrape_linkedin_jobs()
+    search_linkedin_posts()
