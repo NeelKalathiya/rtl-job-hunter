@@ -1,29 +1,70 @@
-def search_linkedin_posts():
-    """Engine 1: Scans for public LinkedIn POSTS with broader filters."""
-    # 1. Broadened keywords to catch more 'Hiring' posts
-    # 2. Changed filter to 'tbs=qdr:w' (Last Week) to find more than 1 result
-    query = f'site:linkedin.com/posts/ ("Hiring" OR "Opening") AND {TECH} AND {EXP} AND "India"'
-    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:w"
+import requests
+from bs4 import BeautifulSoup
+import os
+import time
+import random
+
+BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
+
+# Updated Keywords for broader reach
+TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "VLSI")'
+EXP = '("Fresher" OR "0 years" OR "Trainee" OR "New Grad")'
+
+def send_to_telegram(category, company, title, link):
+    message = (
+        f"🌐 *Type:* {category}\n"
+        f"🏢 *Company:* {company}\n"
+        f"📌 *Role:* {title}\n"
+        f"🔗 [VIEW ON LINKEDIN]({link})"
+    )
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
+    time.sleep(2) # Increased delay to avoid Telegram & LinkedIn rate limits
+
+def scrape_linkedin_jobs():
+    # 1. Use a fresh User-Agent to avoid '0 results' block
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    ]
     
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    # 2. Optimized Guest API URL for India
+    # f_TPR=r604800 is the filter for the 'Past Week' to ensure we find results
+    li_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={TECH.replace(' ', '%20')}%20{EXP.replace(' ', '%20')}&location=India&f_TPR=r604800&start=0"
+    
+    headers = {"User-Agent": random.choice(user_agents)}
     
     try:
-        res = requests.get(search_url, headers=headers)
+        res = requests.get(li_url, headers=headers, timeout=15)
+        if res.status_code != 200:
+            print(f"LinkedIn blocked the request. Status Code: {res.status_code}")
+            return
+
         soup = BeautifulSoup(res.text, 'html.parser')
-        results = soup.find_all('div', class_='g')
+        # LinkedIn uses 'li' for job cards in this API
+        cards = soup.find_all('li')
+        
+        print(f"Found {len(cards)} potential jobs.") # For GitHub Logs
         
         count = 0
-        for r in results:
-            if count >= 10: # Increased limit to 10 per your request
-                break 
+        for card in cards:
+            if count >= 10: break 
             
-            title_element = r.find('h3')
-            link_element = r.find('a')
-            
-            if title_element and link_element:
-                title = title_element.text[:60] + "..."
-                link = link_element['href']
-                send_to_telegram("Post Alert", "LinkedIn User", title, link)
+            try:
+                # Using the specific classes for the Guest API
+                title = card.find('h3', class_='base-search-card__title').get_text(strip=True)
+                company = card.find('h4', class_='base-search-card__subtitle').get_text(strip=True)
+                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
+                
+                send_to_telegram("Job Opening", company, title, link)
                 count += 1
+            except Exception as e:
+                continue
+                
     except Exception as e:
-        print(f"Post Search Error: {e}")
+        print(f"Scrape Error: {e}")
+
+if __name__ == "__main__":
+    scrape_linkedin_jobs()
