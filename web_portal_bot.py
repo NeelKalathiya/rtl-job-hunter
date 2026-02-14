@@ -7,76 +7,70 @@ import time
 BOT_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
-# Your Hardware Keywords
-KEYWORDS = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware") AND (Fresher OR "0 years" OR Trainee)'
+# STRICT KEYWORDS: Using quotes forces the engine to match EXACTLY
+# This prevents "Lead" or "Senior" roles from appearing.
+TECH = '("RTL" OR "Physical Design" OR "ASIC" OR "Hardware")'
+LEVEL = '("Fresher" OR "0 years" OR "Trainee" OR "Entry Level" OR "New Grad")'
+NOT_WANTED = '-"Lead" -"Senior" -"Principal" -"Staff" -"Manager"'
 
-def send_to_telegram(type_label, company, title, link):
-    """Sends every finding. No limits, just a safety delay."""
+def send_to_telegram(category, company, title, link):
+    """Sends every finding without limits. 1.5s delay is required."""
     message = (
-        f"🚀 *UNLIMITED ALERT: {type_label}*\n\n"
-        f"🏢 *Source:* {company}\n"
-        f"📌 *Details:* {title}\n"
-        f"🔗 [Direct Link]({link})"
+        f"🚀 *TYPE: {category}*\n\n"
+        f"🏢 *Company:* {company}\n"
+        f"📌 *Role:* {title}\n"
+        f"🔗 [VIEW ON LINKEDIN]({link})"
     )
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
         requests.post(url, json={"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"})
-        # 1.5s is the safety limit to prevent Telegram from blocking your bot
-        time.sleep(1.5) 
-    except Exception as e:
-        print(f"Telegram Error: {e}")
+        time.sleep(1.5) # Protection from Telegram ban
+    except: pass
 
-def scrape_all_linkedin_jobs():
-    """Engine 1: Scans ALL available public LinkedIn Jobs (India)."""
-    # f_TPR=r604800 = Past Week to ensure no opening is missed
-    base_url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+def get_unlimited_linkedin_leads():
+    # 1. SEARCH FOR JOBS (STRICT)
+    # We use the search query to EXCLUDE senior roles
+    query = f'{TECH} AND {LEVEL} {NOT_WANTED}'
+    li_url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query.replace(' ', '%20')}&location=India&f_TPR=r604800&start=0"
     
-    # We check the first 50 results (increments of 25)
-    for start in [0, 25]: 
-        search_url = f"{base_url}?keywords={KEYWORDS.replace(' ', '%20')}&location=India&f_TPR=r604800&start={start}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        
-        try:
-            response = requests.get(search_url, headers=headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            job_cards = soup.find_all('li')
+    # 2. SEARCH FOR POSTS (STRICT via Google)
+    # This is the only way to find individual 'Hiring' posts
+    post_query = f'site:linkedin.com/posts/ {TECH} {LEVEL} "India" "hiring" {NOT_WANTED}'
+    google_url = f"https://www.google.com/search?q={post_query.replace(' ', '+')}&tbs=qdr:w&num=20"
 
-            if not job_cards:
-                break
-
-            for card in job_cards:
-                try:
-                    title = card.find('h3', class_='base-search-card__title').text.strip()
-                    company = card.find('h4', class_='base-search-card__subtitle').text.strip()
-                    link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
-                    send_to_telegram("JOB", company, title, link)
-                except: continue
-        except Exception as e:
-            print(f"Job Scrape Error at start {start}: {e}")
-
-def search_all_linkedin_posts():
-    """Engine 2: Scans ALL public LinkedIn Posts via Google."""
-    # Searching for posts from the last 7 days
-    query = f'site:linkedin.com/posts/ {KEYWORDS} "India" "hiring"'
-    search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&tbs=qdr:w&num=100"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
+    # ENGINE 1: JOBS
     try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        results = soup.find_all('div', class_='g')
-
-        for res in results:
+        res = requests.get(li_url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for card in soup.find_all('li'):
             try:
-                link = res.find('a')['href']
-                title = res.find('h3').text if res.find('h3') else "LinkedIn Post"
-                if "/posts/" in link:
-                    send_to_telegram("POST", "LinkedIn Hiring Alert", title, link)
+                title = card.find('h3', class_='base-search-card__title').text.strip()
+                # Secondary check: If "Senior" or "Lead" is in title, SKIP IT
+                if any(x in title.lower() for x in ["lead", "senior", "manager", "staff", "principal"]):
+                    continue
+                company = card.find('h4', class_='base-search-card__subtitle').text.strip()
+                link = card.find('a', class_='base-card__full-link')['href'].split('?')[0]
+                send_to_telegram("JOB OPENING", company, title, link)
             except: continue
-    except Exception as e:
-        print(f"Post Search Error: {e}")
+    except: pass
+
+    # ENGINE 2: POSTS
+    try:
+        res = requests.get(google_url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for r in soup.find_all('div', class_='g'):
+            try:
+                link = r.find('a')['href']
+                if "/posts/" in link:
+                    title = r.find('h3').text if r.find('h3') else "LinkedIn Post"
+                    # Check title for senior keywords
+                    if any(x in title.lower() for x in ["lead", "senior", "manager"]):
+                        continue
+                    send_to_telegram("HIRING POST", "LinkedIn User", title, link)
+            except: continue
+    except: pass
 
 if __name__ == "__main__":
-    print("Starting Unlimited Scan...")
-    scrape_all_linkedin_jobs()
-    search_all_linkedin_posts()
+    get_unlimited_linkedin_leads()
